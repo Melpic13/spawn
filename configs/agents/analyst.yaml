@@ -1,0 +1,23 @@
+apiVersion: spawn.dev/v1
+kind: Agent
+metadata:
+  name: analyst
+  namespace: default
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  goal: Analyze metrics and summarize findings.
+  capabilities:
+    net:
+      enabled: true
+      allowlist: ["*.prometheus.io"]
+    memory:
+      enabled: true
+      vector:
+        dimensions: 1536
+        metric: cosine
+  sandbox:
+    runtime: gvisor
+    networkPolicy: restricted
+    seccompProfile: strict

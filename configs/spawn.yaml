@@ -1,0 +1,106 @@
+apiVersion: spawn.dev/v1
+kind: DaemonConfig
+
+server:
+  host: 0.0.0.0
+  ports:
+    grpc: 9090
+    rest: 8080
+    metrics: 9091
+  tls:
+    enabled: false
+    cert: /etc/spawn/tls/server.crt
+    key: /etc/spawn/tls/server.key
+
+auth:
+  enabled: true
+  providers:
+    - type: jwt
+      issuer: https://auth.example.com
+      audience: spawn
+    - type: apikey
+      header: X-API-Key
+  rbac:
+    enabled: true
+    defaultRole: viewer
+
+storage:
+  state:
+    driver: sqlite
+    dsn: /var/lib/spawn/state.db
+  vector:
+    driver: embedded
+    path: /var/lib/spawn/vectors
+  files:
+    driver: local
+    path: /var/lib/spawn/files
+
+sandbox:
+  defaultRuntime: gvisor
+  gvisor:
+    binary: /usr/local/bin/runsc
+    platform: systrap
+  firecracker:
+    binary: /usr/local/bin/firecracker
+    kernelPath: /var/lib/spawn/vmlinux
+  docker:
+    socket: /var/run/docker.sock
+  defaults:
+    memory: 256Mi
+    cpu: "0.5"
+    timeout: 5m
+
+llm:
+  providers:
+    anthropic:
+      apiKey: ${ANTHROPIC_API_KEY}
+      defaultModel: claude-sonnet-4-20250514
+    openai:
+      apiKey: ${OPENAI_API_KEY}
+      defaultModel: gpt-4o
+  routing:
+    strategy: complexity
+    fallbackChain:
+      - anthropic
+      - openai
+  costs:
+    trackEnabled: true
+    alerts:
+      - threshold: 100.00
+        action: notify
+      - threshold: 500.00
+        action: pause
+
+mesh:
+  enabled: true
+  backend: embedded-nats
+  nats:
+    url: nats://localhost:4222
+
+observability:
+  traces:
+    enabled: true
+    exporter: otlp
+    endpoint: localhost:4317
+  metrics:
+    enabled: true
+    exporter: prometheus
+    path: /metrics
+  logs:
+    level: info
+    format: json
+    output: stdout
+
+security:
+  secrets:
+    provider: vault
+    vault:
+      address: https://vault.example.com
+      authMethod: kubernetes
+  audit:
+    enabled: true
+    path: /var/log/spawn/audit.log
+
+plugins:
+  directory: /var/lib/spawn/plugins
+  autoload: true

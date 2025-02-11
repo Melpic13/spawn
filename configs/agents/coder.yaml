@@ -1,0 +1,23 @@
+apiVersion: spawn.dev/v1
+kind: Agent
+metadata:
+  name: coder
+  namespace: default
+spec:
+  model:
+    provider: openai
+    name: gpt-4o
+  goal: Implement requested code changes.
+  capabilities:
+    exec:
+      enabled: true
+      languages: [python, nodejs, bash]
+    fs:
+      enabled: true
+      mounts:
+        - path: /workspace
+          mode: rw
+  sandbox:
+    runtime: docker
+    networkPolicy: egress-only
+    seccompProfile: moderate
