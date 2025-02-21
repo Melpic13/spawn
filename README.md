@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/spawndev/spawn/main/assets/logo.svg" alt="spawn logo" width="200"/>
+  <img src="./assets/logo.svg" alt="spawn logo" width="200"/>
 </p>
 
 <h1 align="center">spawn</h1>
@@ -7,6 +7,10 @@
 <p align="center">
   <strong>The Agent Operating System</strong><br>
   <em>systemd for AI agents</em>
+</p>
+
+<p align="center">
+  <sub>Logo source: <code>assets/logo.svg</code></sub>
 </p>
 
 <p align="center">
