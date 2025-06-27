@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  spawnd:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    volumes:
+      - ../../configs/spawn.yaml:/etc/spawn/spawn.yaml:ro
+    command: ["spawnd", "--config", "/etc/spawn/spawn.yaml"]

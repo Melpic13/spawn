@@ -1,0 +1,7 @@
+syntax = "proto3";
+package spawn.internal;
+
+message MeshMessage {
+  string id = 1;
+  string topic = 2;
+}

@@ -1,0 +1,7 @@
+syntax = "proto3";
+package spawn.v1;
+option go_package = "spawn.dev/api/proto/spawn/v1;spawnv1";
+
+message Capability {
+  string name = 1;
+}

@@ -1,0 +1,6 @@
+syntax = "proto3";
+package spawn.internal;
+
+message Capability {
+  string name = 1;
+}
