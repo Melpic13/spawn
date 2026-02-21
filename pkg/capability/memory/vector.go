@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"math"
 	"sort"
 )
 
@@ -15,17 +16,58 @@ func (s *VectorStore) Put(_ context.Context, key string, vec []float32) error {
 	return nil
 }
 
-// Search returns the first N keys (placeholder for ANN search).
-func (s *VectorStore) Search(_ context.Context, _ []float32, limit int) ([]string, error) {
+// Search returns top keys ranked by cosine similarity.
+func (s *VectorStore) Search(_ context.Context, query []float32, limit int) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	keys := make([]string, 0, len(s.data))
-	for k := range s.data {
-		keys = append(keys, k)
+	if limit <= 0 {
+		limit = 5
 	}
-	sort.Strings(keys)
-	if limit > 0 && len(keys) > limit {
-		keys = keys[:limit]
+	type scored struct {
+		key   string
+		score float64
 	}
-	return keys, nil
+	scores := make([]scored, 0, len(s.data))
+	for key, vec := range s.data {
+		score := cosine(query, vec)
+		scores = append(scores, scored{key: key, score: score})
+	}
+	sort.Slice(scores, func(i, j int) bool {
+		if scores[i].score == scores[j].score {
+			return scores[i].key < scores[j].key
+		}
+		return scores[i].score > scores[j].score
+	})
+	if len(scores) > limit {
+		scores = scores[:limit]
+	}
+	out := make([]string, 0, len(scores))
+	for _, item := range scores {
+		out = append(out, item.key)
+	}
+	return out, nil
+}
+
+func cosine(a, b []float32) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	max := len(a)
+	if len(b) < max {
+		max = len(b)
+	}
+	var dot float64
+	var magA float64
+	var magB float64
+	for i := 0; i < max; i++ {
+		av := float64(a[i])
+		bv := float64(b[i])
+		dot += av * bv
+		magA += av * av
+		magB += bv * bv
+	}
+	if magA == 0 || magB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(magA) * math.Sqrt(magB))
 }

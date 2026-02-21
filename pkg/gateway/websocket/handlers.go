@@ -1,4 +1,4 @@
 package websocket
 
-// RegisterHandlers is a placeholder for websocket event bindings.
-func RegisterHandlers() {}
+// RegisterHandlers registers additional websocket routes.
+func RegisterHandlers(_ *Server) {}

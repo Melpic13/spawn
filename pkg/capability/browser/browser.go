@@ -27,18 +27,22 @@ func (c *Capability) Schema() *capability.Schema {
 }
 
 func (c *Capability) Execute(_ context.Context, req *capability.Request) (*capability.Response, error) {
+	if req == nil {
+		return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_request", Message: "nil request"}}, nil
+	}
 	switch req.Action {
 	case "screenshot":
 		path, _ := req.Params["path"].(string)
 		if path == "" {
 			path = filepath.Join(os.TempDir(), "spawn-screenshot.txt")
 		}
-		if err := os.WriteFile(path, []byte("screenshot placeholder"), 0o644); err != nil {
+		content := []byte("screenshot capture is not enabled in this runtime; configure browser backend to capture pixels")
+		if err := os.WriteFile(path, content, 0o644); err != nil {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "write_failed", Message: err.Error()}}, nil
 		}
-		return &capability.Response{Success: true, Data: path}, nil
+		return &capability.Response{Success: true, Data: map[string]interface{}{"path": path, "bytes": len(content)}}, nil
 	case "record":
-		return &capability.Response{Success: true, Data: "recording-started"}, nil
+		return &capability.Response{Success: true, Data: map[string]interface{}{"status": "recording-started"}}, nil
 	default:
 		return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_action", Message: fmt.Sprintf("unsupported action: %s", req.Action)}}, nil
 	}

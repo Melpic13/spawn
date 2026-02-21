@@ -32,4 +32,4 @@ docker:
 	docker build -t spawn:$(VERSION) .
 
 release:
-	echo "release pipeline placeholder"
+	goreleaser release --clean

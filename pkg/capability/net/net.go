@@ -2,7 +2,10 @@ package net
 
 import (
 	"context"
+	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -36,24 +39,49 @@ func (c *Capability) Schema() *capability.Schema {
 	return &capability.Schema{Actions: []capability.Action{{Name: "get"}, {Name: "resolve"}}}
 }
 
-func (c *Capability) Execute(_ context.Context, req *capability.Request) (*capability.Response, error) {
+func (c *Capability) Execute(ctx context.Context, req *capability.Request) (*capability.Response, error) {
 	if req == nil {
 		return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_request", Message: "nil request"}}, nil
 	}
 	switch req.Action {
 	case "get":
-		url, _ := req.Params["url"].(string)
-		if !c.allowed(url) {
+		rawURL, _ := req.Params["url"].(string)
+		targetURL, err := url.Parse(rawURL)
+		if err != nil || targetURL.Scheme == "" || targetURL.Host == "" {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_url", Message: "valid absolute url is required"}}, nil
+		}
+		if targetURL.Scheme != "http" && targetURL.Scheme != "https" {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_url", Message: "only http/https are allowed"}}, nil
+		}
+		if !c.allowed(targetURL.Hostname()) {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "blocked", Message: "url blocked by policy"}}, nil
 		}
-		resp, err := c.http.Get(url)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL.String(), nil)
+		if err != nil {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "http_failed", Message: err.Error()}}, nil
+		}
+		request.Header.Set("User-Agent", "spawn-net-capability/1.0")
+		resp, err := c.http.Do(request)
 		if err != nil {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "http_failed", Message: err.Error()}}, nil
 		}
 		defer resp.Body.Close()
-		return &capability.Response{Success: true, Data: map[string]interface{}{"status": resp.StatusCode}}, nil
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		if err != nil {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "http_failed", Message: err.Error()}}, nil
+		}
+		return &capability.Response{Success: true, Data: map[string]interface{}{
+			"status":     resp.StatusCode,
+			"host":       targetURL.Hostname(),
+			"headers":    resp.Header,
+			"body":       string(body),
+			"body_bytes": len(body),
+		}}, nil
 	case "resolve":
 		host, _ := req.Params["host"].(string)
+		if !c.allowed(host) {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "blocked", Message: "host blocked by policy"}}, nil
+		}
 		ips, err := Lookup(host)
 		if err != nil {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "dns_failed", Message: err.Error()}}, nil
@@ -64,9 +92,13 @@ func (c *Capability) Execute(_ context.Context, req *capability.Request) (*capab
 	}
 }
 
-func (c *Capability) allowed(url string) bool {
+func (c *Capability) allowed(host string) bool {
+	normalizedHost := normalizeHost(host)
+	if normalizedHost == "" {
+		return false
+	}
 	for _, denied := range c.deny {
-		if strings.Contains(url, strings.TrimPrefix(denied, "*")) {
+		if matchesDomain(normalizedHost, denied) {
 			return false
 		}
 	}
@@ -74,9 +106,35 @@ func (c *Capability) allowed(url string) bool {
 		return true
 	}
 	for _, allowed := range c.allow {
-		if strings.Contains(url, strings.TrimPrefix(allowed, "*")) {
+		if matchesDomain(normalizedHost, allowed) {
 			return true
 		}
 	}
 	return false
+}
+
+func normalizeHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	return strings.TrimSuffix(strings.ToLower(host), ".")
+}
+
+func matchesDomain(host, pattern string) bool {
+	pattern = normalizeHost(pattern)
+	if pattern == "" {
+		return false
+	}
+	if pattern == "*" {
+		return true
+	}
+	if strings.HasPrefix(pattern, "*.") {
+		suffix := strings.TrimPrefix(pattern, "*.")
+		return host == suffix || strings.HasSuffix(host, "."+suffix)
+	}
+	return host == pattern
 }

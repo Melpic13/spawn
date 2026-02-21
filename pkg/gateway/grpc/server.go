@@ -7,6 +7,9 @@ import (
 	"sync"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 )
 
 // Server hosts gRPC services.
@@ -38,6 +41,11 @@ func (s *Server) Start(_ context.Context) error {
 	}
 	s.ln = ln
 	s.srv = grpc.NewServer()
+	healthSrv := health.NewServer()
+	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthpb.RegisterHealthServer(s.srv, healthSrv)
+	reflection.Register(s.srv)
+	RegisterHandlers(s.srv)
 	go func() {
 		_ = s.srv.Serve(ln)
 	}()

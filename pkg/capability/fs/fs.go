@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"spawn.dev/pkg/capability"
 )
@@ -13,11 +14,19 @@ import (
 // Capability provides a basic virtual filesystem rooted at baseDir.
 type Capability struct {
 	baseDir string
+	baseAbs string
 }
 
 // New returns a filesystem capability.
 func New(baseDir string) *Capability {
-	return &Capability{baseDir: baseDir}
+	if baseDir == "" {
+		baseDir = "."
+	}
+	baseAbs, err := filepath.Abs(baseDir)
+	if err != nil {
+		baseAbs = baseDir
+	}
+	return &Capability{baseDir: baseDir, baseAbs: filepath.Clean(baseAbs)}
 }
 
 func (c *Capability) Name() string                                             { return "fs" }
@@ -35,22 +44,24 @@ func (c *Capability) Execute(_ context.Context, req *capability.Request) (*capab
 	if req == nil {
 		return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_request", Message: "nil request"}}, nil
 	}
-	path, _ := req.Params["path"].(string)
-	if path == "" {
-		return &capability.Response{Success: false, Error: &capability.Error{Code: "missing_path", Message: "path is required"}}, nil
-	}
-	resolved := filepath.Clean(filepath.Join(c.baseDir, path))
-	if !filepath.HasPrefix(resolved, filepath.Clean(c.baseDir)) {
-		return &capability.Response{Success: false, Error: &capability.Error{Code: "access_denied", Message: "path escapes root"}}, nil
-	}
 	switch req.Action {
 	case "read":
+		path, _ := req.Params["path"].(string)
+		resolved, err := c.resolve(path)
+		if err != nil {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "access_denied", Message: err.Error()}}, nil
+		}
 		b, err := os.ReadFile(resolved)
 		if err != nil {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "read_failed", Message: err.Error()}}, nil
 		}
 		return &capability.Response{Success: true, Data: string(b)}, nil
 	case "write":
+		path, _ := req.Params["path"].(string)
+		resolved, err := c.resolve(path)
+		if err != nil {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "access_denied", Message: err.Error()}}, nil
+		}
 		content, _ := req.Params["content"].(string)
 		if err := os.MkdirAll(filepath.Dir(resolved), 0o755); err != nil {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "mkdir_failed", Message: err.Error()}}, nil
@@ -65,13 +76,41 @@ func (c *Capability) Execute(_ context.Context, req *capability.Request) (*capab
 		if src == "" || dst == "" {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_params", Message: "src and dst required"}}, nil
 		}
-		if err := c.copy(filepath.Join(c.baseDir, src), filepath.Join(c.baseDir, dst)); err != nil {
+		resolvedSrc, err := c.resolve(src)
+		if err != nil {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "access_denied", Message: err.Error()}}, nil
+		}
+		resolvedDst, err := c.resolve(dst)
+		if err != nil {
+			return &capability.Response{Success: false, Error: &capability.Error{Code: "access_denied", Message: err.Error()}}, nil
+		}
+		if err := c.copy(resolvedSrc, resolvedDst); err != nil {
 			return &capability.Response{Success: false, Error: &capability.Error{Code: "copy_failed", Message: err.Error()}}, nil
 		}
 		return &capability.Response{Success: true}, nil
 	default:
 		return &capability.Response{Success: false, Error: &capability.Error{Code: "invalid_action", Message: req.Action}}, nil
 	}
+}
+
+func (c *Capability) resolve(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	cleanRel := filepath.Clean(path)
+	resolved := filepath.Join(c.baseAbs, cleanRel)
+	absResolved, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	rel, err := filepath.Rel(c.baseAbs, absResolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes root")
+	}
+	return absResolved, nil
 }
 
 func (c *Capability) copy(src, dst string) error {
